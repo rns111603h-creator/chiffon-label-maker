@@ -3,8 +3,12 @@ import { publicAssetPath } from '../src/assetPath';
 
 describe('publicAssetPath', () => {
   it('joins Vite base URL and public asset path', () => {
-    expect(publicAssetPath('chiffon.png')).toBe('/chiffon.png');
-    expect(publicAssetPath('/chiffon.png')).toBe('/chiffon.png');
-    expect(publicAssetPath('product-labels/plain.pdf')).toBe('/product-labels/plain.pdf');
+    const baseUrl = import.meta.env.BASE_URL;
+
+    expect(publicAssetPath('chiffon.png')).toBe(`${baseUrl}chiffon.png`);
+    expect(publicAssetPath('/chiffon.png')).toBe(`${baseUrl}chiffon.png`);
+    expect(publicAssetPath('product-labels/plain.pdf')).toBe(
+      `${baseUrl}product-labels/plain.pdf`,
+    );
   });
 });

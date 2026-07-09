@@ -3,8 +3,10 @@ import { productLabelPdfUrl } from '../src/productLabelPdfs';
 
 describe('productLabelPdfUrl', () => {
   it('returns a public PDF URL for registered products', () => {
+    const baseUrl = import.meta.env.BASE_URL;
+
     expect(productLabelPdfUrl('plain', { plain: 'product-labels/plain.pdf' })).toBe(
-      '/product-labels/plain.pdf',
+      `${baseUrl}product-labels/plain.pdf`,
     );
   });
 
@@ -13,8 +15,10 @@ describe('productLabelPdfUrl', () => {
   });
 
   it('normalizes leading slashes in configured PDF paths', () => {
+    const baseUrl = import.meta.env.BASE_URL;
+
     expect(productLabelPdfUrl('plain', { plain: '/product-labels/plain.pdf' })).toBe(
-      '/product-labels/plain.pdf',
+      `${baseUrl}product-labels/plain.pdf`,
     );
   });
 });
