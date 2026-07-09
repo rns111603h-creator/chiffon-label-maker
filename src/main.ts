@@ -25,7 +25,7 @@ import {
 } from './storage';
 import { createStatusPopupHtml } from './statusPopup';
 import { applyProductTemplateEdits, deleteProductTemplate } from './productEditor';
-import { productLabelPdfUrl } from './productLabelPdfs';
+import { PRODUCT_LABEL_PDF_OPTIONS, productLabelPdfUrl } from './productLabelPdfs';
 import type { LabelJob, PaperLayout, ProductTemplate } from './types';
 import { EDITABLE_SETTINGS_COPY } from './uiCopy';
 import { validateJob, validatePaperLayout } from './validation';
@@ -36,6 +36,7 @@ type AppState = {
   mode: AppMode;
   products: ProductTemplate[];
   selectedProductId: string;
+  selectedProductLabelId: string;
   expiryDate: string;
   labelCount: number;
   paperLayout: PaperLayout;
@@ -50,11 +51,17 @@ if (!root) {
   throw new Error('アプリの表示領域が見つかりません。');
 }
 const app = root;
+const initialProducts = loadProducts();
+const initialProductId = initialProducts[0]?.id ?? '';
 
 let state: AppState = {
   mode: 'expiry-labels',
-  products: loadProducts(),
-  selectedProductId: loadProducts()[0]?.id ?? '',
+  products: initialProducts,
+  selectedProductId: initialProductId,
+  selectedProductLabelId:
+    PRODUCT_LABEL_PDF_OPTIONS.find((option) => option.id === initialProductId)?.id ??
+    PRODUCT_LABEL_PDF_OPTIONS[0]?.id ??
+    '',
   expiryDate: todayIso(),
   labelCount: 20,
   paperLayout: loadPaperLayout(),
@@ -78,7 +85,8 @@ function render(): void {
     effectiveLayout.labelHeightMm,
   );
   const capacity = sheetCapacity(effectiveLayout);
-  const productLabelUrl = productLabelPdfUrl(product.id);
+  const productLabelOption = currentProductLabelOption();
+  const productLabelUrl = productLabelPdfUrl(productLabelOption.id);
   const statusOk = state.mode === 'expiry-labels' ? validation.valid : Boolean(productLabelUrl);
 
   app.innerHTML = `
@@ -98,9 +106,9 @@ function render(): void {
       ${
         state.mode === 'expiry-labels'
           ? expiryLabelWorkflow(product, effectiveLayout, validation, previewUrl, capacity)
-          : productLabelWorkflow(product, productLabelUrl)
+          : productLabelWorkflow(productLabelOption, productLabelUrl)
       }
-      ${settingsPanel(product)}
+      ${state.mode === 'expiry-labels' ? settingsPanel(product) : ''}
     </main>
   `;
 
@@ -146,6 +154,26 @@ function productSelectPanel(product: ProductTemplate, stepNumber = '1'): string 
       <div class="product-summary">
         <strong>${escapeHtml(product.displayName)}</strong>
         <span>${escapeHtml(product.ingredients.join(' / '))}</span>
+      </div>
+    </section>
+  `;
+}
+
+function productLabelSelectPanel(stepNumber = '1'): string {
+  const option = currentProductLabelOption();
+  return `
+    <section class="panel step-panel">
+      <div class="step-number">${stepNumber}</div>
+      <label class="field-label" for="productLabelSelect">商品ラベル</label>
+      <select id="productLabelSelect" class="select">
+        ${PRODUCT_LABEL_PDF_OPTIONS.map(
+          (item) =>
+            `<option value="${escapeHtml(item.id)}" ${item.id === option.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`,
+        ).join('')}
+      </select>
+      <div class="product-summary">
+        <strong>${escapeHtml(`シフォンケーキ（${option.name}）`)}</strong>
+        <span>登録済みPDFをA4タテで表示します。</span>
       </div>
     </section>
   `;
@@ -203,11 +231,14 @@ function expiryLabelWorkflow(
   `;
 }
 
-function productLabelWorkflow(product: ProductTemplate, pdfUrl: string | null): string {
+function productLabelWorkflow(
+  option: (typeof PRODUCT_LABEL_PDF_OPTIONS)[number],
+  pdfUrl: string | null,
+): string {
   return `
       <section class="product-label-layout" aria-label="商品ラベル印刷">
         <div class="product-label-control">
-          ${productSelectPanel(product)}
+          ${productLabelSelectPanel()}
           <div class="action-row">
             <button id="printProductLabelButton" class="primary-button" type="button" ${pdfUrl ? '' : 'disabled'}>印刷</button>
           </div>
@@ -215,8 +246,8 @@ function productLabelWorkflow(product: ProductTemplate, pdfUrl: string | null): 
         <section class="product-label-pdf-area ${pdfUrl ? '' : 'empty'}">
           ${
             pdfUrl
-              ? `<iframe id="productLabelPdfPreview" title="商品ラベルPDFプレビュー" src="${escapeHtml(pdfUrl)}"></iframe>`
-              : '<div class="empty-preview">この商品の商品ラベルPDFは未登録です。</div>'
+              ? `<iframe id="productLabelPdfPreview" title="${escapeHtml(`${option.name}の商品ラベルPDFプレビュー`)}" src="${escapeHtml(pdfUrl)}"></iframe>`
+              : '<div class="empty-preview">この商品ラベルPDFは未登録です。</div>'
           }
         </section>
       </section>
@@ -299,12 +330,21 @@ function bindEvents(): void {
 
   byId<HTMLButtonElement>('productLabelModeButton')?.addEventListener('click', () => {
     state.mode = 'product-labels';
+    if (productLabelPdfUrl(state.selectedProductId)) {
+      state.selectedProductLabelId = state.selectedProductId;
+    }
     state.status = '';
     render();
   });
 
   byId<HTMLSelectElement>('productSelect')?.addEventListener('change', (event) => {
     state.selectedProductId = (event.target as HTMLSelectElement).value;
+    state.status = '';
+    render();
+  });
+
+  byId<HTMLSelectElement>('productLabelSelect')?.addEventListener('change', (event) => {
+    state.selectedProductLabelId = (event.target as HTMLSelectElement).value;
     state.status = '';
     render();
   });
@@ -523,6 +563,13 @@ function resetSettings(): void {
 
 function currentProduct(): ProductTemplate {
   return findProduct(state.products, state.selectedProductId);
+}
+
+function currentProductLabelOption(): (typeof PRODUCT_LABEL_PDF_OPTIONS)[number] {
+  return (
+    PRODUCT_LABEL_PDF_OPTIONS.find((option) => option.id === state.selectedProductLabelId) ??
+    PRODUCT_LABEL_PDF_OPTIONS[0]
+  );
 }
 
 function currentJob(): LabelJob {

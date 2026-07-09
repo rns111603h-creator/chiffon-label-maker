@@ -1,6 +1,25 @@
 import { publicAssetPath } from './assetPath';
 
 export type ProductLabelPdfRegistry = Readonly<Partial<Record<string, string>>>;
+export type ProductLabelPdfOption = Readonly<{
+  id: string;
+  name: string;
+}>;
+
+export const PRODUCT_LABEL_PDF_OPTIONS: readonly ProductLabelPdfOption[] = [
+  { id: 'earl-grey', name: 'アールグレイ' },
+  { id: 'orange-yogurt', name: 'オレンジヨーグルト' },
+  { id: 'kinako', name: 'きなこ' },
+  { id: 'coffee', name: 'コーヒー' },
+  { id: 'chocolate', name: 'チョコ' },
+  { id: 'banana', name: 'バナナ' },
+  { id: 'plain', name: 'プレーン' },
+  { id: 'miso-chestnut', name: 'みそくり' },
+  { id: 'raspberry', name: 'ラズベリー' },
+  { id: 'lemon', name: 'レモン' },
+  { id: 'brown-sugar-kinako', name: '黒糖きなこ' },
+  { id: 'matcha', name: '抹茶' },
+];
 
 export const PRODUCT_LABEL_PDFS: ProductLabelPdfRegistry = {
   'earl-grey': 'product-labels/earl-grey.pdf',

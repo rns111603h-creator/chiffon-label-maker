@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { PRODUCT_LABEL_PDFS, productLabelPdfUrl } from '../src/productLabelPdfs';
+import {
+  PRODUCT_LABEL_PDFS,
+  PRODUCT_LABEL_PDF_OPTIONS,
+  productLabelPdfUrl,
+} from '../src/productLabelPdfs';
 
 describe('productLabelPdfUrl', () => {
   it('returns a public PDF URL for registered products', () => {
@@ -49,5 +53,23 @@ describe('productLabelPdfUrl', () => {
     )) {
       expect(existsSync(resolve(publicDir, path))).toBe(true);
     }
+  });
+
+  it('provides product label print options for every supplied PDF', () => {
+    expect(PRODUCT_LABEL_PDF_OPTIONS).toHaveLength(12);
+    expect(PRODUCT_LABEL_PDF_OPTIONS.map((option) => option.name)).toEqual([
+      'アールグレイ',
+      'オレンジヨーグルト',
+      'きなこ',
+      'コーヒー',
+      'チョコ',
+      'バナナ',
+      'プレーン',
+      'みそくり',
+      'ラズベリー',
+      'レモン',
+      '黒糖きなこ',
+      '抹茶',
+    ]);
   });
 });
