@@ -25,6 +25,7 @@ import {
 } from './storage';
 import { createStatusPopupHtml } from './statusPopup';
 import { applyProductTemplateEdits, deleteProductTemplate } from './productEditor';
+import { buildRepeatedProductLabelPdf, normalizeProductLabelCopies } from './productLabelCopies';
 import { PRODUCT_LABEL_PDF_OPTIONS, productLabelPdfUrl } from './productLabelPdfs';
 import type { LabelJob, PaperLayout, ProductTemplate } from './types';
 import { EDITABLE_SETTINGS_COPY } from './uiCopy';
@@ -37,6 +38,9 @@ type AppState = {
   products: ProductTemplate[];
   selectedProductId: string;
   selectedProductLabelId: string;
+  productLabelCopies: number;
+  productLabelPdfUrl: string;
+  productLabelBusy: boolean;
   expiryDate: string;
   labelCount: number;
   paperLayout: PaperLayout;
@@ -62,6 +66,9 @@ let state: AppState = {
     PRODUCT_LABEL_PDF_OPTIONS.find((option) => option.id === initialProductId)?.id ??
     PRODUCT_LABEL_PDF_OPTIONS[0]?.id ??
     '',
+  productLabelCopies: 1,
+  productLabelPdfUrl: '',
+  productLabelBusy: false,
   expiryDate: todayIso(),
   labelCount: 20,
   paperLayout: loadPaperLayout(),
@@ -86,8 +93,12 @@ function render(): void {
   );
   const capacity = sheetCapacity(effectiveLayout);
   const productLabelOption = currentProductLabelOption();
-  const productLabelUrl = productLabelPdfUrl(productLabelOption.id);
-  const statusOk = state.mode === 'expiry-labels' ? validation.valid : Boolean(productLabelUrl);
+  const sourceProductLabelUrl = productLabelPdfUrl(productLabelOption.id);
+  const productLabelPreviewUrl = currentProductLabelPreviewUrl(sourceProductLabelUrl);
+  const statusOk =
+    state.mode === 'expiry-labels'
+      ? validation.valid
+      : Boolean(productLabelPreviewUrl) && !state.productLabelBusy;
 
   app.innerHTML = `
     <main class="shell">
@@ -106,7 +117,7 @@ function render(): void {
       ${
         state.mode === 'expiry-labels'
           ? expiryLabelWorkflow(product, effectiveLayout, validation, previewUrl, capacity)
-          : productLabelWorkflow(productLabelOption, productLabelUrl)
+          : productLabelWorkflow(productLabelOption, productLabelPreviewUrl)
       }
       ${state.mode === 'expiry-labels' ? settingsPanel(product) : ''}
     </main>
@@ -239,15 +250,30 @@ function productLabelWorkflow(
       <section class="product-label-layout" aria-label="商品ラベル印刷">
         <div class="product-label-control">
           ${productLabelSelectPanel()}
+          <section class="panel step-panel">
+            <div class="step-number">2</div>
+            <label class="field-label" for="productLabelCopies">部数</label>
+            <input
+              id="productLabelCopies"
+              class="number-input"
+              type="number"
+              min="1"
+              max="50"
+              value="${state.productLabelCopies}"
+            />
+            <p class="print-meta">2部以上は、同じA4 PDFを部数分のページにして印刷します。</p>
+          </section>
           <div class="action-row">
-            <button id="printProductLabelButton" class="primary-button" type="button" ${pdfUrl ? '' : 'disabled'}>印刷</button>
+            <button id="printProductLabelButton" class="primary-button" type="button" ${pdfUrl && !state.productLabelBusy ? '' : 'disabled'}>
+              ${state.productLabelBusy ? '作成中...' : '印刷'}
+            </button>
           </div>
         </div>
         <section class="product-label-pdf-area ${pdfUrl ? '' : 'empty'}">
           ${
             pdfUrl
               ? `<iframe id="productLabelPdfPreview" title="${escapeHtml(`${option.name}の商品ラベルPDFプレビュー`)}" src="${escapeHtml(pdfUrl)}"></iframe>`
-              : '<div class="empty-preview">この商品ラベルPDFは未登録です。</div>'
+              : `<div class="empty-preview">${state.productLabelBusy ? '部数分のPDFを作成中です。' : 'この商品ラベルPDFは未登録です。'}</div>`
           }
         </section>
       </section>
@@ -324,6 +350,7 @@ function settingsPanel(product: ProductTemplate): string {
 function bindEvents(): void {
   byId<HTMLButtonElement>('expiryModeButton')?.addEventListener('click', () => {
     state.mode = 'expiry-labels';
+    resetProductLabelPreview();
     state.status = '';
     render();
   });
@@ -333,8 +360,10 @@ function bindEvents(): void {
     if (productLabelPdfUrl(state.selectedProductId)) {
       state.selectedProductLabelId = state.selectedProductId;
     }
+    resetProductLabelPreview();
     state.status = '';
     render();
+    void refreshProductLabelPreview();
   });
 
   byId<HTMLSelectElement>('productSelect')?.addEventListener('change', (event) => {
@@ -345,8 +374,23 @@ function bindEvents(): void {
 
   byId<HTMLSelectElement>('productLabelSelect')?.addEventListener('change', (event) => {
     state.selectedProductLabelId = (event.target as HTMLSelectElement).value;
+    resetProductLabelPreview();
     state.status = '';
     render();
+    void refreshProductLabelPreview();
+  });
+
+  byId<HTMLInputElement>('productLabelCopies')?.addEventListener('change', (event) => {
+    state.productLabelCopies = normalizeProductLabelCopies(
+      Number((event.target as HTMLInputElement).value),
+    );
+    resetProductLabelPreview();
+    state.status =
+      state.productLabelCopies === 1
+        ? '商品ラベルを1部で印刷します。'
+        : `${state.productLabelCopies}部ぶんのPDFを作成します。`;
+    render();
+    void refreshProductLabelPreview();
   });
 
   byId<HTMLInputElement>('expiryDate')?.addEventListener('change', (event) => {
@@ -417,6 +461,43 @@ function printProductLabelPdf(): void {
   const iframe = byId<HTMLIFrameElement>('productLabelPdfPreview');
   iframe?.contentWindow?.focus();
   iframe?.contentWindow?.print();
+}
+
+async function refreshProductLabelPreview(): Promise<void> {
+  if (state.mode !== 'product-labels' || state.productLabelCopies <= 1) return;
+
+  const sourceUrl = productLabelPdfUrl(currentProductLabelOption().id);
+  if (!sourceUrl) return;
+
+  state.productLabelBusy = true;
+  render();
+
+  try {
+    const response = await fetch(sourceUrl);
+    if (!response.ok) {
+      throw new Error('商品ラベルPDFを読み込めませんでした。');
+    }
+
+    const sourceBytes = await response.arrayBuffer();
+    const repeatedBytes = await buildRepeatedProductLabelPdf(sourceBytes, state.productLabelCopies);
+    resetProductLabelPreview();
+    state.productLabelPdfUrl = createPdfPreviewUrl(repeatedBytes);
+    state.status = `${state.productLabelCopies}部ぶんのPDFを作成しました。`;
+  } catch (error) {
+    state.status =
+      error instanceof Error ? error.message : '商品ラベルPDFの部数作成に失敗しました。';
+  } finally {
+    state.productLabelBusy = false;
+    render();
+  }
+}
+
+function resetProductLabelPreview(): void {
+  if (state.productLabelPdfUrl) {
+    URL.revokeObjectURL(state.productLabelPdfUrl);
+    state.productLabelPdfUrl = '';
+  }
+  state.productLabelBusy = false;
 }
 
 function saveCurrentProduct(): void {
@@ -570,6 +651,12 @@ function currentProductLabelOption(): (typeof PRODUCT_LABEL_PDF_OPTIONS)[number]
     PRODUCT_LABEL_PDF_OPTIONS.find((option) => option.id === state.selectedProductLabelId) ??
     PRODUCT_LABEL_PDF_OPTIONS[0]
   );
+}
+
+function currentProductLabelPreviewUrl(sourceUrl: string | null): string | null {
+  if (!sourceUrl) return null;
+  if (state.productLabelCopies <= 1) return sourceUrl;
+  return state.productLabelPdfUrl || null;
 }
 
 function currentJob(): LabelJob {
