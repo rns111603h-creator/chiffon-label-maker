@@ -26,7 +26,7 @@ import {
 import { createStatusPopupHtml } from './statusPopup';
 import { applyProductTemplateEdits, deleteProductTemplate } from './productEditor';
 import { buildRepeatedProductLabelPdf, normalizeProductLabelCopies } from './productLabelCopies';
-import { PRODUCT_LABEL_PDF_OPTIONS, productLabelPdfUrl } from './productLabelPdfs';
+import { productLabelOptionsForProducts, productLabelPdfUrl } from './productLabelPdfs';
 import type { LabelJob, PaperLayout, ProductTemplate } from './types';
 import { EDITABLE_SETTINGS_COPY } from './uiCopy';
 import { validateJob, validatePaperLayout } from './validation';
@@ -62,10 +62,7 @@ let state: AppState = {
   mode: 'expiry-labels',
   products: initialProducts,
   selectedProductId: initialProductId,
-  selectedProductLabelId:
-    PRODUCT_LABEL_PDF_OPTIONS.find((option) => option.id === initialProductId)?.id ??
-    PRODUCT_LABEL_PDF_OPTIONS[0]?.id ??
-    '',
+  selectedProductLabelId: initialProductId,
   productLabelCopies: 1,
   productLabelPdfUrl: '',
   productLabelBusy: false,
@@ -92,8 +89,8 @@ function render(): void {
     effectiveLayout.labelHeightMm,
   );
   const capacity = sheetCapacity(effectiveLayout);
-  const productLabelOption = currentProductLabelOption();
-  const sourceProductLabelUrl = productLabelPdfUrl(productLabelOption.id);
+  const productLabelProduct = currentProductLabelProduct();
+  const sourceProductLabelUrl = productLabelPdfUrl(productLabelProduct.id);
   const productLabelPreviewUrl = currentProductLabelPreviewUrl(sourceProductLabelUrl);
   const statusOk =
     state.mode === 'expiry-labels'
@@ -117,7 +114,7 @@ function render(): void {
       ${
         state.mode === 'expiry-labels'
           ? expiryLabelWorkflow(product, effectiveLayout, validation, previewUrl, capacity)
-          : productLabelWorkflow(productLabelOption, productLabelPreviewUrl)
+          : productLabelWorkflow(productLabelProduct, productLabelPreviewUrl)
       }
       ${state.mode === 'expiry-labels' ? settingsPanel(product) : ''}
     </main>
@@ -171,20 +168,23 @@ function productSelectPanel(product: ProductTemplate, stepNumber = '1'): string 
 }
 
 function productLabelSelectPanel(stepNumber = '1'): string {
-  const option = currentProductLabelOption();
+  const product = currentProductLabelProduct();
+  const options = productLabelOptionsForProducts(state.products);
   return `
     <section class="panel step-panel">
       <div class="step-number">${stepNumber}</div>
       <label class="field-label" for="productLabelSelect">商品ラベル</label>
       <select id="productLabelSelect" class="select">
-        ${PRODUCT_LABEL_PDF_OPTIONS.map(
-          (item) =>
-            `<option value="${escapeHtml(item.id)}" ${item.id === option.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`,
-        ).join('')}
+        ${options
+          .map(
+            (item) =>
+              `<option value="${escapeHtml(item.id)}" ${item.id === product.id ? 'selected' : ''}>${escapeHtml(item.name)}${item.hasPdf ? '' : '（PDF未保存）'}</option>`,
+          )
+          .join('')}
       </select>
       <div class="product-summary">
-        <strong>${escapeHtml(`シフォンケーキ（${option.name}）`)}</strong>
-        <span>登録済みPDFをA4タテで表示します。</span>
+        <strong>${escapeHtml(product.displayName)}</strong>
+        <span>${productLabelPdfUrl(product.id) ? '登録済みPDFをA4タテで表示します。' : 'この商品の商品ラベルPDFはまだ保存されていません。'}</span>
       </div>
     </section>
   `;
@@ -242,10 +242,8 @@ function expiryLabelWorkflow(
   `;
 }
 
-function productLabelWorkflow(
-  option: (typeof PRODUCT_LABEL_PDF_OPTIONS)[number],
-  pdfUrl: string | null,
-): string {
+function productLabelWorkflow(product: ProductTemplate, pdfUrl: string | null): string {
+  const hasSourcePdf = Boolean(productLabelPdfUrl(product.id));
   return `
       <section class="product-label-layout" aria-label="商品ラベル印刷">
         <div class="product-label-control">
@@ -263,8 +261,13 @@ function productLabelWorkflow(
             />
             <p class="print-meta">2部以上は、同じA4 PDFを部数分のページにして印刷します。</p>
           </section>
+          ${
+            hasSourcePdf
+              ? ''
+              : '<div class="message-list compact"><p class="error">この商品の商品ラベルPDFは保存されていません。</p></div>'
+          }
           <div class="action-row">
-            <button id="printProductLabelButton" class="primary-button" type="button" ${pdfUrl && !state.productLabelBusy ? '' : 'disabled'}>
+            <button id="printProductLabelButton" class="primary-button" type="button" ${pdfUrl && !state.productLabelBusy && hasSourcePdf ? '' : 'disabled'}>
               ${state.productLabelBusy ? '作成中...' : '印刷'}
             </button>
           </div>
@@ -272,8 +275,8 @@ function productLabelWorkflow(
         <section class="product-label-pdf-area ${pdfUrl ? '' : 'empty'}">
           ${
             pdfUrl
-              ? `<iframe id="productLabelPdfPreview" title="${escapeHtml(`${option.name}の商品ラベルPDFプレビュー`)}" src="${escapeHtml(pdfUrl)}"></iframe>`
-              : `<div class="empty-preview">${state.productLabelBusy ? '部数分のPDFを作成中です。' : 'この商品ラベルPDFは未登録です。'}</div>`
+              ? `<iframe id="productLabelPdfPreview" title="${escapeHtml(`${product.name}の商品ラベルPDFプレビュー`)}" src="${escapeHtml(pdfUrl)}"></iframe>`
+              : `<div class="empty-preview">${state.productLabelBusy ? '部数分のPDFを作成中です。' : 'この商品の商品ラベルPDFは保存されていません。'}</div>`
           }
         </section>
       </section>
@@ -357,7 +360,7 @@ function bindEvents(): void {
 
   byId<HTMLButtonElement>('productLabelModeButton')?.addEventListener('click', () => {
     state.mode = 'product-labels';
-    if (productLabelPdfUrl(state.selectedProductId)) {
+    if (state.products.some((product) => product.id === state.selectedProductId)) {
       state.selectedProductLabelId = state.selectedProductId;
     }
     resetProductLabelPreview();
@@ -466,7 +469,7 @@ function printProductLabelPdf(): void {
 async function refreshProductLabelPreview(): Promise<void> {
   if (state.mode !== 'product-labels' || state.productLabelCopies <= 1) return;
 
-  const sourceUrl = productLabelPdfUrl(currentProductLabelOption().id);
+  const sourceUrl = productLabelPdfUrl(currentProductLabelProduct().id);
   if (!sourceUrl) return;
 
   state.productLabelBusy = true;
@@ -532,6 +535,8 @@ function addProduct(): void {
   base.displayName = `シフォンケーキ（${base.name}）`;
   state.products = [...state.products, base];
   state.selectedProductId = base.id;
+  state.selectedProductLabelId = base.id;
+  resetProductLabelPreview();
   saveProducts(state.products);
   state.status = '新しい商品テンプレートを追加しました。';
   render();
@@ -553,6 +558,10 @@ function deleteCurrentProduct(): void {
 
   state.products = result.products;
   state.selectedProductId = result.selectedProductId;
+  if (product.id === state.selectedProductLabelId) {
+    state.selectedProductLabelId = result.selectedProductId;
+    resetProductLabelPreview();
+  }
   if (state.pdfUrl) {
     URL.revokeObjectURL(state.pdfUrl);
     state.pdfUrl = '';
@@ -591,7 +600,9 @@ async function importProductData(event: Event): Promise<void> {
 
     state.products = products;
     state.selectedProductId = products[0]?.id ?? '';
+    state.selectedProductLabelId = state.selectedProductId;
     clearPdfPreview();
+    resetProductLabelPreview();
     saveProducts(state.products);
     state.status = `${products.length}件の商品データを読み込みました。`;
     render();
@@ -629,11 +640,16 @@ function saveCurrentPaper(): void {
 
 function resetSettings(): void {
   resetAllSettings();
+  const products = loadProducts();
+  const selectedProductId = products[0]?.id ?? '';
+  clearPdfPreview();
+  resetProductLabelPreview();
   state = {
     ...state,
     mode: state.mode,
-    products: loadProducts(),
-    selectedProductId: loadProducts()[0]?.id ?? '',
+    products,
+    selectedProductId,
+    selectedProductLabelId: selectedProductId,
     paperLayout: DEFAULT_PAPER_LAYOUT,
     labelCount: DEFAULT_PAPER_LAYOUT.columns * DEFAULT_PAPER_LAYOUT.rows,
     status: '初期設定に戻しました。',
@@ -646,11 +662,8 @@ function currentProduct(): ProductTemplate {
   return findProduct(state.products, state.selectedProductId);
 }
 
-function currentProductLabelOption(): (typeof PRODUCT_LABEL_PDF_OPTIONS)[number] {
-  return (
-    PRODUCT_LABEL_PDF_OPTIONS.find((option) => option.id === state.selectedProductLabelId) ??
-    PRODUCT_LABEL_PDF_OPTIONS[0]
-  );
+function currentProductLabelProduct(): ProductTemplate {
+  return findProduct(state.products, state.selectedProductLabelId);
 }
 
 function currentProductLabelPreviewUrl(sourceUrl: string | null): string | null {

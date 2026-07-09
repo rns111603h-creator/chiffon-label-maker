@@ -3,9 +3,10 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   PRODUCT_LABEL_PDFS,
-  PRODUCT_LABEL_PDF_OPTIONS,
+  productLabelOptionsForProducts,
   productLabelPdfUrl,
 } from '../src/productLabelPdfs';
+import { DEFAULT_PRODUCTS } from '../src/products';
 
 describe('productLabelPdfUrl', () => {
   it('returns a public PDF URL for registered products', () => {
@@ -55,21 +56,26 @@ describe('productLabelPdfUrl', () => {
     }
   });
 
-  it('provides product label print options for every supplied PDF', () => {
-    expect(PRODUCT_LABEL_PDF_OPTIONS).toHaveLength(12);
-    expect(PRODUCT_LABEL_PDF_OPTIONS.map((option) => option.name)).toEqual([
-      'アールグレイ',
-      'オレンジヨーグルト',
-      'きなこ',
-      'コーヒー',
-      'チョコ',
-      'バナナ',
-      'プレーン',
-      'みそくり',
-      'ラズベリー',
-      'レモン',
-      '黒糖きなこ',
-      '抹茶',
-    ]);
+  it('builds product label print options from product templates even when PDFs are missing', () => {
+    const products = DEFAULT_PRODUCTS.filter((product) =>
+      ['plain', 'sweet-potato'].includes(product.id),
+    );
+
+    expect(productLabelOptionsForProducts(products, { plain: 'product-labels/plain.pdf' })).toEqual(
+      [
+        {
+          id: 'plain',
+          name: 'プレーン',
+          displayName: 'シフォンケーキ（プレーン）',
+          hasPdf: true,
+        },
+        {
+          id: 'sweet-potato',
+          name: 'さつまいも',
+          displayName: 'シフォンケーキ（さつまいも）',
+          hasPdf: false,
+        },
+      ],
+    );
   });
 });

@@ -1,25 +1,13 @@
 import { publicAssetPath } from './assetPath';
+import type { ProductTemplate } from './types';
 
 export type ProductLabelPdfRegistry = Readonly<Partial<Record<string, string>>>;
-export type ProductLabelPdfOption = Readonly<{
+export type ProductLabelPrintOption = Readonly<{
   id: string;
   name: string;
+  displayName: string;
+  hasPdf: boolean;
 }>;
-
-export const PRODUCT_LABEL_PDF_OPTIONS: readonly ProductLabelPdfOption[] = [
-  { id: 'earl-grey', name: 'アールグレイ' },
-  { id: 'orange-yogurt', name: 'オレンジヨーグルト' },
-  { id: 'kinako', name: 'きなこ' },
-  { id: 'coffee', name: 'コーヒー' },
-  { id: 'chocolate', name: 'チョコ' },
-  { id: 'banana', name: 'バナナ' },
-  { id: 'plain', name: 'プレーン' },
-  { id: 'miso-chestnut', name: 'みそくり' },
-  { id: 'raspberry', name: 'ラズベリー' },
-  { id: 'lemon', name: 'レモン' },
-  { id: 'brown-sugar-kinako', name: '黒糖きなこ' },
-  { id: 'matcha', name: '抹茶' },
-];
 
 export const PRODUCT_LABEL_PDFS: ProductLabelPdfRegistry = {
   'earl-grey': 'product-labels/earl-grey.pdf',
@@ -43,4 +31,16 @@ export function productLabelPdfUrl(
   const path = registry[productId];
   if (!path) return null;
   return publicAssetPath(path);
+}
+
+export function productLabelOptionsForProducts(
+  products: readonly ProductTemplate[],
+  registry: ProductLabelPdfRegistry = PRODUCT_LABEL_PDFS,
+): ProductLabelPrintOption[] {
+  return products.map((product) => ({
+    id: product.id,
+    name: product.name,
+    displayName: product.displayName,
+    hasPdf: Boolean(registry[product.id]),
+  }));
 }
